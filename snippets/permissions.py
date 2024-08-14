@@ -17,8 +17,15 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
 
 
 class IsStaffOrReadOnly(permissions.BasePermission):
+    """
+    Custom permission to only allow staff members of an object to create, update, or delete it.
+    """
+
     def has_permission(self, request, view):
+        # Read permissions are allowed to any request,
+        # so we'll always allow GET, HEAD or OPTIONS requests.
         if request.method in permissions.SAFE_METHODS:
             return True
 
+        # Only allow staff users to create, update, and delete.
         return request.user.is_staff
