@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.db import models
 from pygments import highlight  
 from pygments.formatters.html import HtmlFormatter  
@@ -19,7 +20,7 @@ class Snippet(models.Model):
     )
     style = models.CharField(choices=STYLE_CHOICES, default="friendly", max_length=100)
     owner = models.ForeignKey(
-        "auth.User", related_name="snippets", on_delete=models.CASCADE
+        User, related_name="snippets", on_delete=models.CASCADE
     )  
     highlighted = models.TextField()  
 
@@ -42,3 +43,16 @@ class Snippet(models.Model):
 
     def __str__(self):
         return self.title
+
+class AuditLog(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    action = models.CharField(max_length=100)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    model_name = models.CharField(max_length=100)
+    model_id = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.timestamp}: {self.action} {self.model_name} {self.model_id}"
+
+
+
