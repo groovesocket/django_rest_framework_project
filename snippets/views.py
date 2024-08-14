@@ -1,4 +1,3 @@
-from datetime import datetime
 from django.contrib.auth.models import User
 from rest_framework import generics, permissions, renderers
 from rest_framework.authtoken.models import Token
@@ -9,16 +8,8 @@ from rest_framework.reverse import reverse
 
 from .models import Snippet, AuditLog
 from .permissions import IsOwnerOrReadOnly, IsStaffOrReadOnly
-from .serializers import SnippetSerializer, UserSerializer
+from .serializers import AuditLogSerializer, SnippetSerializer, UserSerializer
 from .mixins import AuditRetrieveUpdateDestroyAPIView, AuditListCreateAPIView, AuditRetrieveDestroyAPIView
-
-class SnippetHighlight(generics.GenericAPIView):
-    queryset = Snippet.objects.all()
-    renderer_classes = (renderers.StaticHTMLRenderer,)
-
-    def get(self, request, *args, **kwargs):
-        snippet = self.get_object()
-        return Response(snippet.highlighted)
 
 
 @api_view(["GET"])
@@ -27,8 +18,19 @@ def api_root(request, format=None):
         {
             "users": reverse("user-list", request=request, format=format),
             "snippets": reverse("snippet-list", request=request, format=format),
+            "audit log": reverse("audit-log", request=request, format=format),
         }
     )
+
+
+
+class SnippetHighlight(generics.GenericAPIView):
+    queryset = Snippet.objects.all()
+    renderer_classes = (renderers.StaticHTMLRenderer,)
+
+    def get(self, request, *args, **kwargs):
+        snippet = self.get_object()
+        return Response(snippet.highlighted)
 
 
 class SnippetList(AuditListCreateAPIView):
@@ -51,6 +53,7 @@ class SnippetDetail(AuditRetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Snippet.objects.all()
+
 
 class UserList(AuditListCreateAPIView):
     serializer_class = UserSerializer
@@ -79,7 +82,7 @@ class UserList(AuditListCreateAPIView):
         return queryset
 
 
-class UserDetail(AuditRetrieveUpdateDestroyAPIView):
+class UserDetail(AuditRetrieveDestroyAPIView):
     serializer_class = UserSerializer
     permission_classes = (IsStaffOrReadOnly,)
 
@@ -91,8 +94,17 @@ class UserDetail(AuditRetrieveUpdateDestroyAPIView):
         instance.is_active = False
         instance.save(update_fields=["is_active"])
 
-# curl -u admin:admin1 -X POST http://localhost:8000/create-token/
-# curl -v -H "Authorization: Token 3aa4fa4d06ece12bae2ae3941c85d0dbba1e7d73" -X DELETE http://localhost:8000/users/5/
+
+class AuditLogList(generics.ListAPIView):
+    serializer_class = AuditLogSerializer
+    permission_classes = (IsStaffOrReadOnly,)
+
+    def get_queryset(self):
+        return AuditLog.objects.all()
+
+
+# CREATE TOKEN: curl -u admin:admin1 -X POST http://localhost:8000/create_token/
+# USING TOKEN: curl -v -H "Authorization: Token 3aa4fa4d06ece12bae2ae3941c85d0dbba1e7d73" -X DELETE http://localhost:8000/users/5/
 class CreateToken(generics.CreateAPIView):
     permission_classes = (permissions.IsAdminUser, )
     

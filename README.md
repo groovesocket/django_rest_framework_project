@@ -25,7 +25,7 @@ Requirements for the model:
 * Add the model to the django admin
 * Tests should be included
 
-### Part 4: Authenticaion
+### Part 4: Authentication
 We need to make sure people can use our API programmatically so we need to make sure the API will accept tokens.
 
 * Ensure that the API can accept both django login as well as token login

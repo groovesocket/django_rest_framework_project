@@ -44,6 +44,7 @@ class Snippet(models.Model):
     def __str__(self):
         return self.title
 
+
 class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     action = models.CharField(max_length=100)
@@ -51,8 +52,11 @@ class AuditLog(models.Model):
     model_name = models.CharField(max_length=100)
     model_id = models.IntegerField()
 
+    class Meta:
+        ordering = ["-id"]
+
     def __str__(self):
-        return f"{self.timestamp}: {self.action} {self.model_name} {self.model_id}"
+        return f"ACTION: {self.action} MODEL: {self.model_name} ID: {self.model_id}, ON: {self.timestamp}"
 
 
 

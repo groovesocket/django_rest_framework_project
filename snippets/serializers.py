@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from snippets.models import Snippet, LANGUAGE_CHOICES, STYLE_CHOICES
+from snippets.models import AuditLog, Snippet
 
 
 class SnippetSerializer(serializers.HyperlinkedModelSerializer): 
@@ -24,7 +24,7 @@ class SnippetSerializer(serializers.HyperlinkedModelSerializer):
         )  
 
 
-class UserSerializer(serializers.HyperlinkedModelSerializer):  
+class UserSerializer(serializers.HyperlinkedModelSerializer):
     snippets = serializers.HyperlinkedRelatedField(  
         many=True, view_name="snippet-detail", read_only=True
     )
@@ -44,3 +44,15 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             "is_active": {"read_only": True},
             "password": {"write_only": True}
         }
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = AuditLog
+        fields = (
+            "action",
+            "model_name",
+            "model_id",
+            "timestamp"
+        )
