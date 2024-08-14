@@ -18,10 +18,8 @@ def api_root(request, format=None):
         {
             "users": reverse("user-list", request=request, format=format),
             "snippets": reverse("snippet-list", request=request, format=format),
-            "audit log": reverse("audit-log", request=request, format=format),
         }
     )
-
 
 
 class SnippetHighlight(generics.GenericAPIView):
@@ -100,6 +98,8 @@ class AuditLogList(generics.ListAPIView):
     permission_classes = (IsStaffOrReadOnly,)
 
     def get_queryset(self):
+        if not self.request.user.is_staff:
+            raise PermissionDenied
         return AuditLog.objects.all()
 
 

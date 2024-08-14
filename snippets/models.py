@@ -56,7 +56,7 @@ class AuditLog(models.Model):
         ordering = ["-id"]
 
     def __str__(self):
-        return f"ACTION: {self.action} MODEL: {self.model_name} ID: {self.model_id}, ON: {self.timestamp}"
+        return f"ACTION: {self.action} MODEL: {self.model_name} ID: {self.model_id}, ON: {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
 
 

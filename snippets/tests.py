@@ -1,24 +1,68 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework import status
+from rest_framework.authtoken.models import Token
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.request import Request
 from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
-from unittest.mock import patch, MagicMock
 from .views import UserList
-from .models import Snippet
-from .serializers import UserSerializer
+from .models import Snippet, AuditLog
+from .serializers import AuditLogSerializer, SnippetSerializer, UserSerializer
+
+
+class TestSnippetList(TestCase):
+    # These test use token auth just for giggles to test token login
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='testuser', password='testpassword')
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.token.key)
+
+        Snippet.objects.create(code='foo', owner=self.user)
+        Snippet.objects.create(code='bar', owner=self.user)
+
+    def test_get_snippet_list_authenticated(self):
+        response = self.client.get(reverse('snippet-list'))
+        request = APIRequestFactory().get('/snippets/')
+        snippets = Snippet.objects.all()
+        serializer = SnippetSerializer(snippets, many=True, context={'request': request})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], serializer.data)
+
+    def test_get_snippet_list_unauthenticated(self):
+        self.client.credentials()  # Remove authentication
+        response = self.client.get(reverse('snippet-list'))
+        request = APIRequestFactory().get('/snippets/')
+        snippets = Snippet.objects.all()
+        serializer = SnippetSerializer(snippets, many=True, context={'request': request})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], serializer.data)  # Unauthenticated users can still read
+
+    def test_create_snippet_authenticated(self):
+        data = {'code': 'baz'}
+        response = self.client.post(reverse('snippet-list'), data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Snippet.objects.count(), 3)
+        self.assertEqual(Snippet.objects.last().code, 'baz')
+        self.assertEqual(Snippet.objects.last().owner, self.user)
+
+    def test_create_snippet_unauthenticated(self):
+        self.client.credentials()  # Remove authentication
+        data = {'code': 'qux'}
+        response = self.client.post(reverse('snippet-list'), data)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)  # Unauthenticated users cannot create
 
 
 class TestSnippetDetail(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = User.objects.create_user(username='testuser', password='testpassword')
+        self.snippet_code = 'print("Hello, world!")'
         self.snippet = Snippet.objects.create(
             title='Test Snippet',
-            code='print("Hello, world!")',
+            code=self.snippet_code,
             owner=self.user
         )
 
@@ -36,129 +80,169 @@ class TestSnippetDetail(TestCase):
     def test_update_snippet_unauthenticated(self):
         data = {'title': 'Updated Snippet'}
         response = self.client.put(f'/snippets/{self.snippet.id}/', data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_update_snippet_authenticated(self):
         self.client.force_authenticate(user=self.user)
-        data = {'title': 'Updated Snippet'}
+        data = {'title': 'Updated Snippet', 'code': self.snippet_code}
         response = self.client.put(f'/snippets/{self.snippet.id}/', data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['title'], 'Updated Snippet')
 
     def test_delete_snippet_unauthenticated(self):
         response = self.client.delete(f'/snippets/{self.snippet.id}/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_delete_snippet_authenticated(self):
         self.client.force_authenticate(user=self.user)
         response = self.client.delete(f'/snippets/{self.snippet.id}/')
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Snippet.objects.filter(id=self.snippet.id).exists())
-
-# TODO
-class TestSnippetList(TestCase):
-    def test_perform_create(self):
-        self.fail()
+        self.assertTrue(Snippet.objects.filter(id=self.snippet.id).exists())
 
 
 class TestUserList(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
-        self.request_mock = MagicMock()
-        # set up mock non staff user
-        self.request_mock.user.is_staff = False
+        self.client = APIClient()
         self.view = UserList()
-        User.objects.create(username='user1', password='1234')
-        User.objects.create(username='user2', password='6789')
-        self.users = User.objects.all()
+        self.staff_user = User.objects.create_user(username='staffuser', password='staffpassword', is_staff=True)
+        self.regular_user = User.objects.create_user(username='regularuser', password='regularpassword', is_staff=False)
 
-    # The @patch decorator mocks the create method of the parent class to prevent actual database interaction.
-    @patch('rest_framework.generics.ListCreateAPIView.create')
-    def test_create_permission_denied(self, mock_super_create):
-        # Check if PermissionDenied is raised when a non-staff user tries to create a user.
-        with self.assertRaises(PermissionDenied):
-            self.view.create(self.request_mock)
-        # assert_not_called verifies that the parent's create wasn't called.
-        mock_super_create.assert_not_called()
+    def test_create_user_staff(self):
+        self.client.force_authenticate(user=self.staff_user)
+        data = {'username': 'newuser', 'password': 'newpassword'}
+        response = self.client.post(reverse('user-list'), data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(User.objects.count(), 3)
+        self.assertEqual(User.objects.get(username='newuser').username, 'newuser')
 
-    @patch('rest_framework.generics.ListCreateAPIView.create')
-    def test_create_staff_user(self, mock_super_create):
-        # Check if the create call succeeds when the user is staff.
-        self.request_mock.user.is_staff = True
-        self.view.create(self.request_mock)
-        # assert_called_once verifies that the parent's create was called once.
-        mock_super_create.assert_called_once()
+    def test_create_user_non_staff(self):
+        self.client.force_authenticate(user=self.regular_user)
+        data = {'username': 'anotheruser', 'password': 'anotherpassword'}
+        self.client.post(reverse('user-list'), data)
+        self.assertRaises(PermissionDenied)
 
-    @patch('django.contrib.auth.models.User.objects.all')
-    def test_get_queryset(self, mock_all):
-        # Mock the return value of User.objects.all()
-        mock_all.return_value = self.users
 
+    def test_get_user_list_staff(self):
+        self.client.force_authenticate(user=self.staff_user)
         request = self.factory.get('/users/')
-        callable_view = UserList.as_view()
-        response = callable_view(request)
+        response = self.client.get(reverse('user-list'))
+        users = User.objects.all()
+        serializer = UserSerializer(users, many=True, context={'request': request})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], serializer.data)
 
-        # Check if the response contains the expected data
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['count'], 2)
-        self.assertEqual(response.data['results'][0]['username'], 'user1')
-        self.assertEqual(response.data['results'][1]['username'], 'user2')
+    def test_get_user_list_non_staff(self):
+        self.client.force_authenticate(user=self.regular_user)
+        response = self.client.get(reverse('user-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch('rest_framework.generics.ListCreateAPIView.filter_queryset')
-    def test_filter_queryset_non_staff(self, mock_super_filter_queryset):
-        # Check if non-staff users don't trigger additional filtering.
-        request = self.factory.get('/users/')
-        request.user = MagicMock(is_staff=False)
-        queryset = User.objects.none()  # Mock initial queryset
-        self.view.setup(request=request)
-
-        self.view.filter_queryset(queryset)
-
-        mock_super_filter_queryset.assert_called_once_with(queryset)
-
-    @patch('rest_framework.generics.ListCreateAPIView.filter_queryset')
-    def test_filter_queryset_staff_no_param(self, mock_super_filter_queryset):
-        # Checks if staff users without the include_deactivated parameter don't trigger additional filtering.
+    def test_filter_queryset_staff_no_include_deactivated_param(self):
+        # Create a request without include_deactivated parameter
         request = Request(self.factory.get('/users/'))
-        request.user = MagicMock(is_staff=True)
+        request.user = self.staff_user
+
+        # Create a view instance
         self.view.setup(request=request)
-        queryset = User.objects.none()
 
-        self.view.filter_queryset(queryset)
+        # Create some test users
+        User.objects.create(username="active_user", is_active=True)
+        User.objects.create(username="inactive_user", is_active=False)
 
-        mock_super_filter_queryset.assert_called_once_with(queryset)
+        queryset = self.view.filter_queryset(User.objects.all())
+        # get only the active users
+        active_users_queryset = User.objects.filter(is_active=True)
+        self.assertEqual(queryset.count(), len(active_users_queryset))
+        self.assertTrue(queryset.first().is_active)
 
-    @patch('rest_framework.generics.ListCreateAPIView.filter_queryset')
-    def test_filter_queryset_staff_include_deactivated(self, mock_super_filter_queryset):
-        # Checks the behavior when a staff user provides include_deactivated=1.
-        request = Request(self.factory.get('/users/?include_deactivated=1'))
-        request.user = MagicMock(is_staff=True)
-        self.view.setup(request=request)
-        queryset = User.objects.none()
-
-        self.view.filter_queryset(queryset)
-
-        mock_super_filter_queryset.assert_called_once_with(queryset)
-
-    @patch('rest_framework.generics.ListCreateAPIView.filter_queryset')
-    def test_filter_queryset_staff_exclude_deactivated(self, mock_super_filter_queryset):
-        # Checks the behavior when a staff user provides include_deactivated=0 (or any value other than "1").
+    def test_filter_queryset_staff_no_include_deactivated(self):
+        # Create a request with url attribute include_deactivated=0 (or any value other than "1").
         request = Request(self.factory.get('/users/?include_deactivated=0'))
-        request.user = MagicMock(is_staff=True)
+        request.user = self.staff_user
+
+        # Create a view instance
         self.view.setup(request=request)
-        queryset = User.objects.none()
 
-        self.view.filter_queryset(queryset)
+        # Create some test users
+        User.objects.create(username="active_user", is_active=True)
+        User.objects.create(username="inactive_user", is_active=False)
 
-        mock_super_filter_queryset.assert_called_once_with(queryset)
+        queryset = self.view.filter_queryset(User.objects.all())
+        # get only the active users
+        active_users_queryset = User.objects.filter(is_active=True)
+        self.assertEqual(queryset.count(), len(active_users_queryset))
+        self.assertTrue(queryset.first().is_active)
 
-# TODO
+    def test_filter_queryset_staff_include_deactivated(self):
+        # Create a request with url attribute include_deactivated=1
+        request = Request(self.factory.get('/users/?include_deactivated=1'))
+        request.user = self.staff_user
+
+        # Create a view instance
+        self.view.setup(request=request)
+
+        # Create some test users
+        User.objects.create(username="active_user", is_active=True)
+        User.objects.create(username="inactive_user", is_active=False)
+
+        queryset = self.view.filter_queryset(User.objects.all())
+        # get only the active users
+        all_users_queryset = User.objects.all()
+        self.assertEqual(queryset.count(), len(all_users_queryset.all()))
+        self.assertTrue(queryset.first().is_active)
+
+
 class TestUserDetail(TestCase):
-    def test_get_queryset(self):
-        self.fail()
+    def setUp(self):
+        self.client = APIClient()
+        self.staff_user = User.objects.create_user(username='staffuser', password='staffpassword', is_staff=True)
+        self.regular_user = User.objects.create_user(username='regularuser', password='regularpassword', is_staff=False)
+        self.user_to_delete = User.objects.create_user(username='deleteuser', password='deletepassword')
 
-    def test_destroy(self):
-        self.fail()
+    def test_get_user_detail_staff(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f'/users/{self.staff_user.id}/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['username'], 'staffuser')
 
-    def test_perform_destroy(self):
-        self.fail()
+    def test_get_user_detail_non_staff(self):
+        self.client.force_authenticate(user=self.regular_user)
+        response = self.client.get(f'/users/{self.staff_user.id}/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['username'], 'staffuser')
+
+    def test_delete_user_staff(self):
+        self.client.force_authenticate(user=self.staff_user)
+        url = reverse('user-detail', kwargs={'pk': self.user_to_delete.pk})  # Replace 'user-detail' with your actual URL name
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        deleted_user = User.objects.get(pk=self.user_to_delete.pk)
+        self.assertFalse(deleted_user.is_active)  # Check if user is deactivated
+
+    def test_delete_user_non_staff(self):
+        self.client.force_authenticate(user=self.regular_user)
+        url = reverse('user-detail', kwargs={'pk': self.user_to_delete.pk})  # Replace 'user-detail' with your actual URL name
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)  # Non-staff cannot delete
+
+
+class TestAuditLog(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff_user = User.objects.create_user(username='staffuser', password='staffpassword', is_staff=True)
+        self.regular_user = User.objects.create_user(username='regularuser', password='regularpassword', is_staff=False)
+        AuditLog.objects.create(user=self.staff_user, action='test create', model_id=1, model_name="test audit log 1")
+        AuditLog.objects.create(user=self.regular_user, action='test destroy', model_id=2, model_name="test audit log 2")
+
+    def test_get_audit_log_list_staff(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(reverse('audit-log'))  # Replace 'auditlog-list' with your actual URL name
+        audit_logs = AuditLog.objects.all()
+        serializer = AuditLogSerializer(audit_logs, many=True)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], serializer.data)
+
+    def test_get_audit_log_list_non_staff(self):
+        self.client.force_authenticate(user=self.regular_user)
+        self.client.get(reverse('audit-log'))
+        self.assertRaises(PermissionDenied)

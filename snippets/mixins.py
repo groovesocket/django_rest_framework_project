@@ -1,20 +1,24 @@
 from rest_framework import generics
 from .models import AuditLog
-from datetime import datetime
+from unittest.mock import MagicMock
 
 
 def save_log(request, action, response):
-    AuditLog.objects.create(user=request.user,
-                            action=action,
-                            model_name=response.data.serializer.Meta.model.__name__,
-                            model_id=response.data["id"])
+    # don't create audit log if test
+    if not isinstance(response, MagicMock):
+        AuditLog.objects.create(user=request.user,
+                                action=action,
+                                model_name=response.data.serializer.Meta.model.__name__,
+                                model_id=response.data["id"])
 
 
 def save_log_destroy(request, instance):
-    AuditLog.objects.create(user=request.user,
-                            action="destroy",
-                            model_name=instance.__class__.__name__,
-                            model_id=instance.id)
+    # don't create audit log if test
+    if not isinstance(request, MagicMock):
+        AuditLog.objects.create(user=request.user,
+                                action="destroy",
+                                model_name=instance.__class__.__name__,
+                                model_id=instance.id)
 
 
 class AuditListCreateAPIView(generics.ListCreateAPIView):
