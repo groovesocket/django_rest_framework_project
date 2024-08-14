@@ -213,7 +213,7 @@ class TestUserDetail(TestCase):
 
     def test_delete_user_staff(self):
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('user-detail', kwargs={'pk': self.user_to_delete.pk})  # Replace 'user-detail' with your actual URL name
+        url = reverse('user-detail', kwargs={'pk': self.user_to_delete.pk})
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         deleted_user = User.objects.get(pk=self.user_to_delete.pk)
@@ -221,7 +221,7 @@ class TestUserDetail(TestCase):
 
     def test_delete_user_non_staff(self):
         self.client.force_authenticate(user=self.regular_user)
-        url = reverse('user-detail', kwargs={'pk': self.user_to_delete.pk})  # Replace 'user-detail' with your actual URL name
+        url = reverse('user-detail', kwargs={'pk': self.user_to_delete.pk})
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)  # Non-staff cannot delete
 
@@ -236,7 +236,7 @@ class TestAuditLog(TestCase):
 
     def test_get_audit_log_list_staff(self):
         self.client.force_authenticate(user=self.staff_user)
-        response = self.client.get(reverse('audit-log'))  # Replace 'auditlog-list' with your actual URL name
+        response = self.client.get(reverse('audit-log'))
         audit_logs = AuditLog.objects.all()
         serializer = AuditLogSerializer(audit_logs, many=True)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
