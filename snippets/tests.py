@@ -7,6 +7,7 @@ from rest_framework.request import Request
 from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
+
 from .views import UserList
 from .models import Snippet, AuditLog
 from .serializers import AuditLogSerializer, SnippetSerializer, UserSerializer
