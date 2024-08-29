@@ -147,13 +147,3 @@ class AuditLogList(generics.ListAPIView):
         if not self.request.user.is_staff:
             raise PermissionDenied
         return AuditLog.objects.select_related("user").all()
-
-
-# CREATE TOKEN: curl -u admin:admin1 -X POST http://localhost:8000/create_token/
-# USING TOKEN: curl -v -H "Authorization: Token 3aa4fa4d06ece12bae2ae3941c85d0dbba1e7d73" -X DELETE http://localhost:8000/users/5/
-class CreateToken(generics.CreateAPIView):
-    permission_classes = (permissions.IsAdminUser, )
-    
-    def post(self, request, *args, **kwargs):
-        token, created = Token.objects.get_or_create(user=request.user)
-        return Response({'token': token.key})
