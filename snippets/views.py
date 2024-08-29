@@ -1,6 +1,5 @@
 from django.contrib.auth.models import User
 from rest_framework import generics, permissions, renderers
-from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.mixins import CreateModelMixin, DestroyModelMixin
