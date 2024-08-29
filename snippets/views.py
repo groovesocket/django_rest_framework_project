@@ -3,13 +3,17 @@ from rest_framework import generics, permissions, renderers
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.mixins import CreateModelMixin, DestroyModelMixin
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
 
 from .models import Snippet, AuditLog
 from .permissions import IsOwnerOrReadOnly, IsStaffOrReadOnly
 from .serializers import AuditLogSerializer, SnippetSerializer, UserSerializer
-from .mixins import AuditRetrieveUpdateDestroyAPIView, AuditListCreateAPIView, AuditRetrieveDestroyAPIView
+
+ACTION_CREATE = "create"
+ACTION_UPDATE = "update"
+ACTION_DELETE = "delete"
 
 
 @api_view(["GET"])
@@ -22,8 +26,15 @@ def api_root(request, format=None):
     )
 
 
+def save_audit_log(request, action, model_name, model_id):
+    AuditLog.objects.create(user=request.user,
+                            action=action,
+                            model_name=model_name,
+                            model_id=model_id)
+
+
 class SnippetHighlight(generics.GenericAPIView):
-    queryset = Snippet.objects.all()
+    queryset = Snippet.objects.select_related("owner").all()
     renderer_classes = (renderers.StaticHTMLRenderer,)
 
     def get(self, request, *args, **kwargs):
@@ -31,18 +42,26 @@ class SnippetHighlight(generics.GenericAPIView):
         return Response(snippet.highlighted)
 
 
-class SnippetList(AuditListCreateAPIView):
+class SnippetList(generics.ListCreateAPIView, CreateModelMixin):
     serializer_class = SnippetSerializer
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
 
     def get_queryset(self):
-        return Snippet.objects.all()
+        return Snippet.objects.select_related("owner").all()
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        save_audit_log(request=request,
+                       action=ACTION_CREATE,
+                       model_name=response.data.serializer.Meta.model.__name__,
+                       model_id=response.data["id"])
+        return response
 
-class SnippetDetail(AuditRetrieveUpdateDestroyAPIView):
+
+class SnippetDetail(generics.RetrieveUpdateDestroyAPIView, DestroyModelMixin):
     serializer_class = SnippetSerializer
     permission_classes = (
         permissions.IsAuthenticatedOrReadOnly,
@@ -50,17 +69,29 @@ class SnippetDetail(AuditRetrieveUpdateDestroyAPIView):
     )
 
     def get_queryset(self):
-        return Snippet.objects.all()
+        return Snippet.objects.select_related("owner").all()
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        save_audit_log(request=request,
+                       action=ACTION_UPDATE,
+                       model_name=response.data.serializer.Meta.model.__name__,
+                       model_id=response.data["id"])
+        return response
+
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        save_audit_log(request=self.request,
+                       action=ACTION_DELETE,
+                       model_name=instance.__class__.__name__,
+                       model_id=instance.id)
+        instance.delete()
 
 
-class UserList(AuditListCreateAPIView):
+class UserList(generics.ListCreateAPIView):
     serializer_class = UserSerializer
-
-    def create(self, request, *args, **kwargs):
-        if not request.user.is_staff:
-            raise PermissionDenied
-
-        return super().create(request, *args, **kwargs)
 
     def get_queryset(self):
         return User.objects.all()
@@ -79,8 +110,20 @@ class UserList(AuditListCreateAPIView):
 
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        # Only staff users can create new users
+        if not request.user.is_staff:
+            raise PermissionDenied
 
-class UserDetail(AuditRetrieveDestroyAPIView):
+        response = super().create(request, *args, **kwargs)
+        save_audit_log(request=request,
+                       action=ACTION_CREATE,
+                       model_name=response.data.serializer.Meta.model.__name__,
+                       model_id=response.data["id"])
+        return response
+
+
+class UserDetail(generics.RetrieveDestroyAPIView, DestroyModelMixin):
     serializer_class = UserSerializer
     permission_classes = (IsStaffOrReadOnly,)
 
@@ -88,7 +131,10 @@ class UserDetail(AuditRetrieveDestroyAPIView):
         return User.objects.all()
 
     def perform_destroy(self, instance):
-        super().perform_destroy(instance)
+        save_audit_log(request=self.request,
+                       action=ACTION_DELETE,
+                       model_name=instance.__class__.__name__,
+                       model_id=instance.id)
         instance.is_active = False
         instance.save(update_fields=["is_active"])
 
@@ -100,7 +146,7 @@ class AuditLogList(generics.ListAPIView):
     def get_queryset(self):
         if not self.request.user.is_staff:
             raise PermissionDenied
-        return AuditLog.objects.all()
+        return AuditLog.objects.select_related("user").all()
 
 
 # CREATE TOKEN: curl -u admin:admin1 -X POST http://localhost:8000/create_token/

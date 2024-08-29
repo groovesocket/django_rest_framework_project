@@ -98,7 +98,7 @@ class TestSnippetDetail(TestCase):
         self.client.force_authenticate(user=self.user)
         response = self.client.delete(f'/snippets/{self.snippet.id}/')
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertTrue(Snippet.objects.filter(id=self.snippet.id).exists())
+        self.assertFalse(Snippet.objects.filter(id=self.snippet.id).exists())
 
 
 class TestUserList(TestCase):
