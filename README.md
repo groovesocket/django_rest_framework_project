@@ -1,7 +1,7 @@
 # Django Rest Framework API project
   
 ### Part 1: Get it working  
-Since this is a vanilla Django Rest Framework application. There are issues with the application which you will need to find and fix before you can move onto part two.  The application needs to be functional when completed. 
+This is a vanilla Django Rest Framework application. There are issues with the application which you will need to find and fix before you can move onto part two.  The application needs to be functional when completed. 
   
 ### Part 2: Managing users  
 Currently, our application doesn't allow users to be added or deleted through the API. 
